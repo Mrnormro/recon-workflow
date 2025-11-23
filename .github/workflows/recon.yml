@@ -1,1 +1,82 @@
+name: Reconnaissance
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  scan-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip jq
+
+      - name: Install Nuclei
+        run: |
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest | jq -r '.tag_name')
+          CLEAN_VERSION=${LATEST_VERSION#v}
+          wget https://github.com/projectdiscovery/nuclei/releases/download/${LATEST_VERSION}/nuclei_${CLEAN_VERSION}_linux_amd64.zip
+          unzip -o nuclei_${CLEAN_VERSION}_linux_amd64.zip
+          sudo mv nuclei /usr/bin/
+          sudo chmod +x /usr/bin/nuclei
+
+      - name: Install Recon Tools
+        run: |
+          go install github.com/tomnomnom/assetfinder@latest
+          go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+          go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+          go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+
+          sudo mv ~/go/bin/* /usr/bin/
+
+      - name: Subdomain Enumeration & Vulnerability Scan
+        run: |
+          set -e
+          TARGET="detik.com"
+          TODAY=$(date +%F)
+          mkdir -p Detik
+
+          echo "[*] Finding subdomains..."
+          subfinder -d $TARGET -silent > sub1.txt
+          assetfinder --subs-only $TARGET | grep "\\.${TARGET}$" > sub2.txt
+          cat sub1.txt sub2.txt | sort -u > Detik/detik.txt
+
+          echo "[*] Probing live web apps..."
+          cat Detik/detik.txt | httpx -silent -o Detik/subdomains-detik-live.txt
+
+          echo "[*] Resolving DNS..."
+          cat Detik/subdomains-detik-live.txt | awk '{print $1}' | dnsx -silent -a -cname -resp \
+            -o Detik/detik-resolved.txt
+
+          echo "[*] Running nuclei scan..."
+          cat Detik/detik-resolved.txt | awk '{print $1}' | sort -u | nuclei -as \
+            -H "X-Bug-Bounty: Bugcrowd-eno@bugcrowdninja.com" \
+            -t dns/ -t cves/ -t misconfiguration/ -t exposures/ \
+            -o Detik/detik-live-urls-$TODAY.txt
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "${{ secrets.EMAIL_ADDRESS }}"
+          git config --global user.name "${{ secrets.USER_NAME }}"
+
+      - name: Commit and Push Results
+        run: |
+          git add Detik/
+          git commit -m "Recon result $(date -u)" || echo "Nothing to commit"
+          git push
 
