@@ -53,7 +53,7 @@ jobs:
           sudo mv nuclei /usr/bin/
           sudo chmod +x /usr/bin/nuclei
 
-      - name: Install Nuclei Templates
+      - name: Install & Update Nuclei Templates
         run: |
           nuclei -update-templates
 
@@ -66,30 +66,29 @@ jobs:
 
           echo "[*] Finding subdomains..."
           subfinder -d $TARGET -silent > sub1.txt
-          assetfinder --subs-only $TARGET | grep "\\.${TARGET}$" > sub2.txt
+          assetfinder --subs-only $TARGET | grep "\.${TARGET}$" > sub2.txt
           cat sub1.txt sub2.txt | sort -u > Detik/detik.txt
           echo "[+] Total subdomains: $(wc -l < Detik/detik.txt)"
 
-          echo "[*] Probing live web apps..."
+          echo "[*] Probing live hosts..."
           cat Detik/detik.txt | httpx \
             -silent \
             -status-code -title -tech-detect -web-server -ip \
             -o Detik/subdomains-detik-live.txt
 
           echo "[*] Resolving DNS..."
-          cat Detik/subdomains-detik-live.txt | awk '{print $1}' | dnsx -silent -a -cname -resp \
+          cat Detik/subdomains-detik-live.txt | awk '{print $1}' | dnsx \
+            -silent -a -cname -resp \
             -o Detik/detik-resolved.txt
 
           echo "[*] Running nuclei scan..."
           cat Detik/detik-resolved.txt | awk '{print $1}' | sort -u | nuclei \
-            -t cves/ \
-            -t vulnerabilities/ \
-            -t misconfigurations/ \
-            -t exposures/ \
+            -as \
             -stats \
             -o Detik/detik-live-urls-$TODAY.txt
 
-          echo "✅ Recon selesai. Hasil di Detik/detik-live-urls-$TODAY.txt"
+          echo "✅ Recon selesai. File hasil:"
+          echo "Detik/detik-live-urls-$TODAY.txt"
 
       - name: Configure Git
         run: |
