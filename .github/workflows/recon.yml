@@ -35,14 +35,10 @@ jobs:
           sudo mv nuclei /usr/bin/
           sudo chmod +x /usr/bin/nuclei
 
-      - name: Install Recon Tools
+      - name: Install Nuclei Templates
         run: |
-          go install github.com/tomnomnom/assetfinder@latest
-          go install github.com/projectdiscovery/httpx/cmd/httpx@latest
-          go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
-          go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+          nuclei -update-templates
 
-          sudo mv ~/go/bin/* /usr/bin/
 
       - name: Subdomain Enumeration & Vulnerability Scan
         run: |
@@ -66,7 +62,6 @@ jobs:
           echo "[*] Running nuclei scan..."
           cat Detik/detik-resolved.txt | awk '{print $1}' | sort -u | nuclei -as \
             -H "X-Bug-Bounty: Bugcrowd-eno@bugcrowdninja.com" \
-            -t dns/ -t cves/ -t misconfiguration/ -t exposures/ \
             -o Detik/detik-live-urls-$TODAY.txt
 
       - name: Configure Git
@@ -79,4 +74,3 @@ jobs:
           git add Detik/
           git commit -m "Recon result $(date -u)" || echo "Nothing to commit"
           git push
-
