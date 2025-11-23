@@ -26,8 +26,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y wget unzip jq
 
+      - name: Install Recon Tools (Go)
+        run: |
+          echo "[+] Installing Go-based recon tools"
+          export GO111MODULE=on
+          export PATH=$PATH:$(go env GOPATH)/bin
+
+          go install github.com/tomnomnom/assetfinder@latest
+          go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+          go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+          go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+
+          echo "[+] Verifying tools"
+          which subfinder
+          which assetfinder
+          which httpx
+          which dnsx
+
       - name: Install Nuclei
         run: |
+          echo "[+] Installing Nuclei"
           LATEST_VERSION=$(curl -s https://api.github.com/repos/projectdiscovery/nuclei/releases/latest | jq -r '.tag_name')
           CLEAN_VERSION=${LATEST_VERSION#v}
           wget https://github.com/projectdiscovery/nuclei/releases/download/${LATEST_VERSION}/nuclei_${CLEAN_VERSION}_linux_amd64.zip
@@ -38,7 +56,6 @@ jobs:
       - name: Install Nuclei Templates
         run: |
           nuclei -update-templates
-
 
       - name: Subdomain Enumeration & Vulnerability Scan
         run: |
@@ -51,18 +68,28 @@ jobs:
           subfinder -d $TARGET -silent > sub1.txt
           assetfinder --subs-only $TARGET | grep "\\.${TARGET}$" > sub2.txt
           cat sub1.txt sub2.txt | sort -u > Detik/detik.txt
+          echo "[+] Total subdomains: $(wc -l < Detik/detik.txt)"
 
           echo "[*] Probing live web apps..."
-          cat Detik/detik.txt | httpx -silent -o Detik/subdomains-detik-live.txt
+          cat Detik/detik.txt | httpx \
+            -silent \
+            -status-code -title -tech-detect -web-server -ip \
+            -o Detik/subdomains-detik-live.txt
 
           echo "[*] Resolving DNS..."
           cat Detik/subdomains-detik-live.txt | awk '{print $1}' | dnsx -silent -a -cname -resp \
             -o Detik/detik-resolved.txt
 
           echo "[*] Running nuclei scan..."
-          cat Detik/detik-resolved.txt | awk '{print $1}' | sort -u | nuclei -as \
-            -H "X-Bug-Bounty: Bugcrowd-eno@bugcrowdninja.com" \
+          cat Detik/detik-resolved.txt | awk '{print $1}' | sort -u | nuclei \
+            -t cves/ \
+            -t vulnerabilities/ \
+            -t misconfigurations/ \
+            -t exposures/ \
+            -stats \
             -o Detik/detik-live-urls-$TODAY.txt
+
+          echo "✅ Recon selesai. Hasil di Detik/detik-live-urls-$TODAY.txt"
 
       - name: Configure Git
         run: |
