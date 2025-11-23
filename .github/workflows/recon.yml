@@ -1,4 +1,4 @@
-name: Reconnaissance
+name: Reconnaissanc
 
 on:
   workflow_dispatch:
