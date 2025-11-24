@@ -1,4 +1,4 @@
-name: Reconnaissanc
+name: Reconnaissance
 
 on:
   workflow_dispatch:
@@ -37,14 +37,12 @@ jobs:
 
           go install github.com/tomnomnom/assetfinder@latest
           go install github.com/projectdiscovery/httpx/cmd/httpx@latest
-          go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
           go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 
           echo "[+] Verifying tools"
           which subfinder
           which assetfinder
           which httpx
-          which dnsx
 
       - name: Install Nuclei
         run: |
@@ -60,10 +58,10 @@ jobs:
         run: |
           nuclei -update-templates
 
-      - name: Subdomain Enumeration & FULL Scan
+      - name: Subdomain Enumeration & Scan (TANPA DNS RESOLVING)
         run: |
           set -e
-          TARGET="detik.com"
+          TARGET="${{ github.event.inputs.target_domain }}"
           TODAY=$(date +%F)
           mkdir -p Recon
 
@@ -72,13 +70,14 @@ jobs:
           subfinder -d $TARGET -silent > sub1.txt
           assetfinder --subs-only $TARGET | grep "\\.${TARGET}$" > sub2.txt
           cat sub1.txt sub2.txt | sort -u > Recon/all-subdomains.txt
-          echo "[+] Total subdomains: $(wc -l < Recon/all-subdomains.txt)"
+          echo "[+] Total subdomains found: $(wc -l < Recon/all-subdomains.txt)"
 
-          echo "[*] Resolving DNS (tanpa filter)..."
-          cat Recon/all-subdomains.txt | dnsx -silent -a -cname -resp > Recon/resolved-subdomains.txt
+          echo "[*] Checking LIVE subdomains (HTTP only, tanpa DNS resolving)..."
+          cat Recon/all-subdomains.txt | httpx -silent > Recon/live-subdomains.txt
+          echo "[+] Live subdomains: $(wc -l < Recon/live-subdomains.txt)"
 
-          echo "[*] Running nuclei scan on ALL subdomains..."
-          cat Recon/resolved-subdomains.txt | awk '{print $1}' | sort -u | nuclei \
+          echo "[*] Running nuclei scan on LIVE subdomains..."
+          cat Recon/live-subdomains.txt | nuclei \
             -stats \
             -rate-limit 50 \
             -c 50 \
@@ -97,4 +96,5 @@ jobs:
         run: |
           git add Recon/
           git commit -m "Recon result $(date -u)" || echo "Nothing to commit"
+          git pull --rebase
           git push
